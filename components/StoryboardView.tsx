@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Project, Chapter, Shot, ANGLE_OPTIONS, SHOT_TYPE_OPTIONS } from '../types';
-// Import DEFAULT_PROMPTS as a configuration fallback
-import { generateStoryboard, DEFAULT_PROMPTS } from '../services/geminiService';
+import { generateStoryboard } from '../services/geminiService';
 import { ArrowLeft, Clapperboard, Video, Image as ImageIcon, Mic, Sparkles, Loader2, Copy, Check, Eye, EyeOff, Edit2, Trash2, Plus, Save, X } from 'lucide-react';
 
 interface StoryboardViewProps {
@@ -28,14 +27,13 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({ project, chapter
   const handleGenerate = async () => {
     setLoading(true);
     try {
-      // Pass the full PromptConfig object (project.prompts or fallback) to satisfy generateStoryboard's interface
       const shots = await generateStoryboard(
           chapter.content, 
           {
             characters: project.characters || [],
             scenes: project.scenes || []
           },
-          project.prompts || DEFAULT_PROMPTS
+          project.prompts?.storyboard
       );
       
       const updatedChapters = project.chapters.map(c => 
@@ -338,7 +336,7 @@ export const StoryboardView: React.FC<StoryboardViewProps> = ({ project, chapter
                   </div>
               </div>
           </div>
-       )}
+      )}
     </div>
   );
 };

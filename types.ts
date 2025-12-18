@@ -20,59 +20,14 @@ export interface AnalysisDebugLog {
 }
 
 export interface PromptConfig {
-  modelName: string; // New: Selected model identifier
   entityExtraction: string;
-  entityEnrichment: string; 
+  entityEnrichment: string; // New: Prompt for smart completion
   chapterSplit: string;
   storyboard: string;
   exportFormat?: string; 
   sceneOptimization?: string; 
   apiDelay?: number; 
 }
-
-export interface ModelMetadata {
-  id: string;
-  name: string;
-  description: string;
-  pros: string;
-  cons: string;
-  maxChunkChars: number;
-  rpmLimit: number; // Approximate RPM for guidance
-  tags: string[];
-}
-
-export const AVAILABLE_MODELS: ModelMetadata[] = [
-  {
-    id: 'gemini-3-flash-preview',
-    name: 'Gemini 3 Flash (全能推荐)',
-    description: '极速响应，平衡性能与长度，适合大批量角色与场景提取。',
-    pros: '高并发支持，上下文理解稳定。',
-    cons: '分镜提示词细节略逊于 Pro 版本。',
-    maxChunkChars: 60000,
-    rpmLimit: 15,
-    tags: ['平衡', '主流']
-  },
-  {
-    id: 'gemini-3-pro-preview',
-    name: 'Gemini 3 Pro (智力巅峰)',
-    description: '最强逻辑推理，能够捕捉微小细节，适合生成极高标准的电影感分镜。',
-    pros: '分镜设计极具创意，细节提取深厚。',
-    cons: '免费版限频严重 (仅 2 RPM)，生成速度较慢。',
-    maxChunkChars: 120000,
-    rpmLimit: 2,
-    tags: ['深度', '电影感']
-  },
-  {
-    id: 'gemini-flash-lite-latest',
-    name: 'Gemini Flash Lite (极速轻量)',
-    description: '最低延迟的模型，适合初次快速扫描或简单摘要。',
-    pros: '响应极快，处理超长文本吞吐量大。',
-    cons: '复杂关系理解较弱，可能遗漏服装细节。',
-    maxChunkChars: 30000,
-    rpmLimit: 30,
-    tags: ['轻量', '节能']
-  }
-];
 
 export interface ClothingStyle {
   phase: string; 

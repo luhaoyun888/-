@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Project, AppView, PromptConfig } from './types';
+import { Project, AppView } from './types';
 import { Sidebar } from './components/Sidebar';
 import { EntityExtraction } from './components/EntityExtraction';
 import { ChapterManager } from './components/ChapterManager';
@@ -7,7 +7,7 @@ import { StoryboardView } from './components/StoryboardView';
 import { SettingsView } from './components/SettingsView';
 import { ExportManager } from './components/ExportManager';
 import { fileSystem } from './services/fileSystemService';
-import { analyzeEntitiesWithProgress, DEFAULT_PROMPTS } from './services/geminiService';
+import { analyzeEntitiesWithProgress } from './services/geminiService';
 import { Upload, FileText, AlertTriangle, Settings, Download, Loader2, X } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -64,7 +64,6 @@ const App: React.FC = () => {
      return Array.isArray(parsed) ? parsed.map((p: any) => ({
           ...p,
           fullText: p.fullText || '',
-          prompts: p.prompts || DEFAULT_PROMPTS,
           characters: Array.isArray(p.characters) ? p.characters.map((c: any) => ({
               ...c,
               aliases: Array.isArray(c.aliases) ? c.aliases : [],
@@ -128,8 +127,7 @@ const App: React.FC = () => {
       fullText: '',
       characters: [],
       scenes: [],
-      chapters: [],
-      prompts: DEFAULT_PROMPTS
+      chapters: []
     };
     setProjects([...projects, newProject]);
     setCurrentProjectId(newProject.id);
@@ -160,7 +158,7 @@ const App: React.FC = () => {
   };
 
   // --- Global Analysis Handler ---
-  const handleStartAnalysis = async (fullText: string, config: PromptConfig) => {
+  const handleStartAnalysis = async (fullText: string, prompt: string | undefined, delay: number | undefined) => {
       if (!currentProject) return;
       
       // Cancel previous if exists
@@ -179,7 +177,8 @@ const App: React.FC = () => {
       try {
           const result = await analyzeEntitiesWithProgress(
               fullText,
-              config,
+              prompt,
+              delay,
               (pct, status) => {
                   setAnalysisProgress(pct);
                   setAnalysisStatus(status);
@@ -187,6 +186,7 @@ const App: React.FC = () => {
               controller.signal
           );
           
+          // Use callback to get latest state of projects
           setProjects(prev => {
               return prev.map(p => {
                   if (p.id === currentProjectId) {
@@ -194,7 +194,7 @@ const App: React.FC = () => {
                           ...p,
                           characters: result.characters,
                           scenes: result.scenes,
-                          debugLog: result.debugLog
+                          debugLog: result.debugLog // Save debug logs
                       };
                   }
                   return p;
@@ -209,6 +209,7 @@ const App: React.FC = () => {
               setAnalysisError(e.message || "分析失败");
           }
       } finally {
+          // Only stop loading if the current controller is the one that finished/cancelled
           if (abortControllerRef.current === controller) {
               setIsAnalyzing(false);
               setAnalysisProgress(0);
@@ -284,10 +285,11 @@ const App: React.FC = () => {
       default:
         return (
           <div className="flex-1 flex flex-col bg-gray-950 h-screen overflow-hidden">
+            {/* Top Nav */}
             <div className="border-b border-gray-800 px-6 py-4 flex items-center justify-between bg-gray-950 z-10">
               <div>
                   <h2 className="text-xl font-bold text-white tracking-tight">{currentProject.title}</h2>
-                  <p className="text-xs text-gray-500 mt-0.5 font-mono">{(currentProject.fullText?.length || 0).toLocaleString()} 字 &bull; {currentProject.prompts?.modelName}</p>
+                  <p className="text-xs text-gray-500 mt-0.5 font-mono">{(currentProject.fullText?.length || 0).toLocaleString()} 字</p>
               </div>
               <div className="flex bg-gray-900 p-1 rounded-lg border border-gray-800">
                   <button onClick={() => setView(AppView.ANALYSIS)} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${view === AppView.ANALYSIS ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}>1. 设定提取</button>

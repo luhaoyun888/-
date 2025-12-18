@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Project, Chapter, Shot } from '../types';
-// Import DEFAULT_PROMPTS to use as a fallback for the prompt configuration
-import { splitChaptersRegex, normalizeTextEntities, generateStoryboard, DEFAULT_PROMPTS } from '../services/geminiService';
+import { splitChaptersRegex, normalizeTextEntities, generateStoryboard } from '../services/geminiService';
 import { Book, FileText, LayoutList, PlayCircle, Loader2, Sparkles, X, CheckCircle2, Clock, Edit2, Trash2, Plus, Save } from 'lucide-react';
 
 interface ChapterManagerProps {
@@ -78,11 +77,10 @@ export const ChapterManager: React.FC<ChapterManagerProps> = ({ project, onUpdat
               const actualIndex = batchStart - 1 + i;
               setBatchProgress(`正在处理第 ${actualIndex + 1} 章 (${i + 1}/${chaptersToProcess.length}): ${chapter.title}`);
               
-              // Pass the full PromptConfig object to generateStoryboard instead of just the prompt string
               const shots = await generateStoryboard(
                   chapter.content, 
                   { characters: project.characters || [], scenes: project.scenes || [] },
-                  project.prompts || DEFAULT_PROMPTS
+                  project.prompts?.storyboard
               );
               updatedChapters[actualIndex] = { ...chapter, storyboard: shots };
           }
@@ -161,7 +159,7 @@ export const ChapterManager: React.FC<ChapterManagerProps> = ({ project, onUpdat
 
       {!hasChapters && !loading && (
         <div className="flex-1 flex flex-col items-center justify-center bg-gray-900/30 rounded-xl border border-gray-800">
-           < Book className="w-12 h-12 text-gray-700 mb-4" />
+           <Book className="w-12 h-12 text-gray-700 mb-4" />
            <p className="text-gray-500">点击右上角“正则拆分章节”快速匹配目录结构。</p>
         </div>
       )}

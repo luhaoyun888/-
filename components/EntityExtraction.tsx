@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Project, Character, Scene, VISUAL_AGE_OPTIONS, Weapon, CHARACTER_ROLES, CharacterRole, PromptConfig } from '../types';
+import { Project, Character, Scene, VISUAL_AGE_OPTIONS, Weapon, CHARACTER_ROLES, CharacterRole } from '../types';
 import { analyzeEntitiesWithProgress, enrichEntities } from '../services/geminiService';
 import { User, MapPin, Sparkles, Shirt, Loader2, AlertCircle, Edit2, Trash2, Plus, Save, X, Link as LinkIcon, Layers, LayoutGrid, LayoutTemplate, Copy, Sword, Activity, RefreshCw, ChevronDown, ChevronRight, Star, Bug, FileJson, CheckCircle2, Wrench, Wand2 } from 'lucide-react';
 
@@ -10,7 +10,7 @@ interface EntityExtractionProps {
   loading: boolean;
   progress: number;
   statusText: string;
-  onStartAnalysis: (fullText: string, config: PromptConfig) => Promise<void>;
+  onStartAnalysis: (fullText: string, prompt: string | undefined, delay: number | undefined) => Promise<void>;
   onCancelAnalysis: () => void;
   error: string | null;
 }
@@ -85,11 +85,13 @@ export const EntityExtraction: React.FC<EntityExtractionProps> = ({
       };
 
       Object.entries(allCharGroups).forEach(([groupName, chars]) => {
+          // Determine the dominant role for the group (default to Minor if mixed or undefined)
+          // We look at the first character's role as the group determinant for simplicity
           const mainRole = chars[0]?.role || '配角'; 
           if (categories[mainRole]) {
               categories[mainRole][groupName] = chars;
           } else {
-              categories['配角'][groupName] = chars; 
+              categories['配角'][groupName] = chars; // Fallback
           }
       });
       return categories;
@@ -103,6 +105,7 @@ export const EntityExtraction: React.FC<EntityExtractionProps> = ({
       };
 
       Object.entries(allSceneGroups).forEach(([groupName, scenes]) => {
+          // Map internal types to display categories
           const type = scenes[0]?.type || '剧情节点';
           let catKey = '次要场景';
           if (type === '核心据点') catKey = '主要场景';
@@ -114,12 +117,26 @@ export const EntityExtraction: React.FC<EntityExtractionProps> = ({
       return categories;
   }, [allSceneGroups]);
 
+  // --- Validation ---
+  const isGroupNameUnique = (name: string, type: 'char' | 'scene', skipOriginal: string | null = null) => {
+      if (name === skipOriginal) return true;
+      if (type === 'char') return !Object.keys(allCharGroups).includes(name);
+      return !Object.keys(allSceneGroups).includes(name);
+  };
+
+  const isItemNameUnique = (name: string, type: 'char' | 'scene', id: string) => {
+      if (type === 'char') {
+          return !project.characters.some(c => c.name === name && c.id !== id);
+      }
+      return !project.scenes.some(s => s.name === name && s.id !== id);
+  }
+
   // --- Actions ---
 
   const handleAnalyzeClick = async () => {
-    if (!project.fullText || !project.prompts) return;
+    if (!project.fullText) return;
     const confirmMsg = hasCustomPrompt 
-        ? "即将使用【自定义提示词】及选定模型进行重新分析。这将覆盖现有数据，是否继续？"
+        ? "即将使用【自定义提示词】重新分析全文。这将覆盖现有数据，是否继续？"
         : "重新分析将覆盖现有数据，是否继续？";
         
     if ((project.characters || []).length > 0 && !window.confirm(confirmMsg)) return;
@@ -128,7 +145,8 @@ export const EntityExtraction: React.FC<EntityExtractionProps> = ({
     try {
         await onStartAnalysis(
             project.fullText, 
-            project.prompts
+            project.prompts?.entityExtraction,
+            project.prompts?.apiDelay
         );
     } finally {
         setIsStarting(false);
@@ -136,13 +154,13 @@ export const EntityExtraction: React.FC<EntityExtractionProps> = ({
   };
 
   const handleEnrichClick = async () => {
-      if (!project.prompts || ((project.characters || []).length === 0 && (project.scenes || []).length === 0)) return;
+      if ((project.characters || []).length === 0 && (project.scenes || []).length === 0) return;
       
       setIsEnriching(true);
       try {
           const result = await enrichEntities(
               { characters: project.characters || [], scenes: project.scenes || [] },
-              project.prompts
+              project.prompts?.entityEnrichment
           );
           onUpdateProject({
               ...project,
@@ -202,6 +220,11 @@ export const EntityExtraction: React.FC<EntityExtractionProps> = ({
           return;
       }
 
+      if (!isGroupNameUnique(newName, type, original)) {
+          alert(`分组名称 "${newName}" 已存在，请使用其他名称。`);
+          return;
+      }
+
       if (activeTab === 'chars') {
           const updatedChars = (project.characters || []).map(c => 
               c.groupName === original ? { ...c, groupName: newName } : c
@@ -239,6 +262,10 @@ export const EntityExtraction: React.FC<EntityExtractionProps> = ({
   }
 
   const saveCharacter = (char: Character) => {
+      if (!isItemNameUnique(char.name, 'char', char.id)) {
+          alert(`角色名称 "${char.name}" 已存在，同个角色不同形态请保证名称唯一 (如: 孙悟空-行者形态)。`);
+          return;
+      }
       let updatedChars = [...(project.characters || [])];
       if (isNew) { updatedChars.push(char); } 
       else { updatedChars = updatedChars.map(c => c.id === char.id ? char : c); }
@@ -248,6 +275,10 @@ export const EntityExtraction: React.FC<EntityExtractionProps> = ({
   };
 
   const saveScene = (scene: Scene) => {
+       if (!isItemNameUnique(scene.name, 'scene', scene.id)) {
+          alert(`场景名称 "${scene.name}" 已存在。`);
+          return;
+      }
       let updatedScenes = [...(project.scenes || [])];
       if (isNew) { updatedScenes.push(scene); } 
       else { updatedScenes = updatedScenes.map(s => s.id === scene.id ? scene : s); }
@@ -286,6 +317,7 @@ export const EntityExtraction: React.FC<EntityExtractionProps> = ({
 
   if (!project.fullText) return null;
 
+  // Render Helpers
   const renderGroupContent = (groupName: string, items: any[]) => (
     <div key={groupName} className={`bg-gray-900/40 border border-gray-800 rounded-xl p-4 break-inside-avoid mb-6 ${viewMode === 'masonry' ? '' : 'h-full'}`}>
         <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-800/50">
@@ -414,6 +446,7 @@ export const EntityExtraction: React.FC<EntityExtractionProps> = ({
         <div className="flex gap-3 items-center">
              {error && <span className="text-red-400 text-sm flex items-center gap-2"><AlertCircle className="w-4 h-4"/> {error}</span>}
              
+             {/* Custom Prompt Indicator */}
              {hasCustomPrompt && !loading && (
                  <div className="flex items-center gap-1.5 bg-yellow-900/30 border border-yellow-900/50 text-yellow-500 px-3 py-1.5 rounded-lg text-xs" title="当前正在使用自定义提示词配置">
                      <Wrench className="w-3.5 h-3.5" />
@@ -475,6 +508,7 @@ export const EntityExtraction: React.FC<EntityExtractionProps> = ({
         </div>
       )}
 
+      {/* Main Content Areas ... (Grid/Masonry) */}
       {!hasData && !loading && (
         <div className="flex-1 flex flex-col items-center justify-center bg-gray-900/30 rounded-xl border border-gray-800">
           <Sparkles className="w-12 h-12 text-gray-700 mb-4" />
@@ -484,6 +518,7 @@ export const EntityExtraction: React.FC<EntityExtractionProps> = ({
 
       {hasData && (
         <div className="flex-1 overflow-hidden flex flex-col">
+          {/* Tabs */}
           <div className="flex justify-between items-center border-b border-gray-800 mb-6 pb-2">
             <div className="flex gap-6">
                 <button onClick={() => setActiveTab('chars')} className={`pb-3 text-sm font-medium transition-colors relative ${activeTab === 'chars' ? 'text-indigo-400' : 'text-gray-500 hover:text-gray-300'}`}>
@@ -525,8 +560,149 @@ export const EntityExtraction: React.FC<EntityExtractionProps> = ({
         </div>
       )}
 
-      {/* Editing Modals (omitted for brevity, assume they remain similar) */}
-      {/* ... */}
+      {/* Character Editing Modal */}
+      {editingChar && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+              <div className="bg-gray-900 w-full max-w-2xl rounded-xl border border-gray-800 shadow-2xl flex flex-col max-h-[90vh]">
+                  <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-950 rounded-t-xl">
+                      <h3 className="text-lg font-bold text-white">{isNew ? '新增角色' : '编辑角色'}</h3>
+                      <button onClick={() => setEditingChar(null)}><X className="w-5 h-5 text-gray-500"/></button>
+                  </div>
+                  <div className="p-6 overflow-y-auto space-y-4 custom-scrollbar">
+                       {/* Basic Info */}
+                       <div className="grid grid-cols-2 gap-4">
+                          <div>
+                              <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">形态名称</label>
+                              <input type="text" value={editingChar.name} onChange={e => setEditingChar({...editingChar, name: e.target.value})} className="w-full bg-gray-950 border border-gray-800 rounded p-2 text-white" placeholder="如: 孙悟空-行者形态" />
+                          </div>
+                          <div>
+                              <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">角色分级 (Role)</label>
+                              <select value={editingChar.role || '配角'} onChange={e => setEditingChar({...editingChar, role: e.target.value as CharacterRole})} className="w-full bg-gray-950 border border-gray-800 rounded p-2 text-white">
+                                  {CHARACTER_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                              </select>
+                          </div>
+                       </div>
+                       
+                       <div>
+                           <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">视觉年龄</label>
+                           <select value={editingChar.age} onChange={e => setEditingChar({...editingChar, age: e.target.value})} className="w-full bg-gray-950 border border-gray-800 rounded p-2 text-white">{VISUAL_AGE_OPTIONS.map(o=><option key={o} value={o}>{o}</option>)}</select>
+                       </div>
+
+                       <div>
+                           <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">人物小传 (Description)</label>
+                           <textarea value={editingChar.description} onChange={e => setEditingChar({...editingChar, description: e.target.value})} className="w-full h-24 bg-gray-950 border border-gray-800 rounded p-2 text-white text-sm" placeholder="性格、背景、身份..." />
+                       </div>
+
+                       <div>
+                           <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">外貌特征 (Visuals)</label>
+                           <textarea value={editingChar.visualMemoryPoints} onChange={e => setEditingChar({...editingChar, visualMemoryPoints: e.target.value})} className="w-full h-24 bg-gray-950 border border-gray-800 rounded p-2 text-white text-sm" placeholder="性别、体型、发型、发色、脸型、眼睛瞳孔、肤色、脸部特征..." />
+                       </div>
+                       
+                       {/* Clothing Styles */}
+                       <div className="border border-indigo-500/30 bg-indigo-900/10 rounded-xl p-4">
+                          <label className="block text-sm font-bold text-indigo-300 uppercase mb-3 flex items-center gap-2"><Shirt className="w-4 h-4"/> 服装造型</label>
+                          {(editingChar.clothingStyles || []).map((c, i) => (
+                              <div key={i} className="flex gap-2 mb-2">
+                                  <input value={c.phase} onChange={e=>{const n=[...editingChar.clothingStyles];n[i].phase=e.target.value;setEditingChar({...editingChar, clothingStyles:n})}} className="bg-gray-950 border border-indigo-900/50 rounded p-1.5 text-white text-xs w-1/3" placeholder="时期/状态 (如: 战损版)"/>
+                                  <div className="flex-1 flex gap-1">
+                                      <input value={c.description} onChange={e=>{const n=[...editingChar.clothingStyles];n[i].description=e.target.value;setEditingChar({...editingChar, clothingStyles:n})}} className="bg-gray-950 border border-indigo-900/50 rounded p-1.5 text-white text-xs flex-1" placeholder="服装描述细节"/>
+                                      <button onClick={()=>{const n=[...editingChar.clothingStyles];n.splice(i,1);setEditingChar({...editingChar, clothingStyles:n})}} className="p-1 hover:bg-red-900/30 text-gray-500 hover:text-red-400 rounded"><Trash2 className="w-3.5 h-3.5"/></button>
+                                  </div>
+                              </div>
+                          ))}
+                          <button onClick={()=>setEditingChar({...editingChar, clothingStyles:[...(editingChar.clothingStyles||[]), {phase:'',description:''}]})} className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 mt-2"><Plus className="w-3 h-3"/> 添加服装</button>
+                       </div>
+
+                       {/* Weapons */}
+                       <div className="border border-red-500/30 bg-red-900/10 rounded-xl p-4">
+                          <label className="block text-sm font-bold text-red-300 uppercase mb-3 flex items-center gap-2"><Sword className="w-4 h-4"/> 武器装备</label>
+                          {(editingChar.weapons || []).map((w, i) => (
+                              <div key={i} className="flex gap-2 mb-2">
+                                  <input value={w.name} onChange={e=>{const n=[...editingChar.weapons];n[i].name=e.target.value;setEditingChar({...editingChar, weapons:n})}} className="bg-gray-950 border border-red-900/50 rounded p-1.5 text-white text-xs w-1/3" placeholder="武器名"/>
+                                  <div className="flex-1 flex gap-1">
+                                      <input value={w.description} onChange={e=>{const n=[...editingChar.weapons];n[i].description=e.target.value;setEditingChar({...editingChar, weapons:n})}} className="bg-gray-950 border border-red-900/50 rounded p-1.5 text-white text-xs flex-1" placeholder="外观描述"/>
+                                      <button onClick={()=>{const n=[...editingChar.weapons];n.splice(i,1);setEditingChar({...editingChar, weapons:n})}} className="p-1 hover:bg-red-900/30 text-gray-500 hover:text-red-400 rounded"><Trash2 className="w-3.5 h-3.5"/></button>
+                                  </div>
+                              </div>
+                          ))}
+                          <button onClick={()=>setEditingChar({...editingChar, weapons:[...(editingChar.weapons||[]), {name:'',description:''}]})} className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 mt-2"><Plus className="w-3 h-3"/> 添加武器</button>
+                       </div>
+                  </div>
+                  <div className="p-4 border-t border-gray-800 flex justify-end gap-3 bg-gray-950 rounded-b-xl">
+                      <button onClick={() => setEditingChar(null)} className="px-4 py-2 rounded text-gray-400 hover:bg-gray-800">取消</button>
+                      <button onClick={() => saveCharacter(editingChar)} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded text-white font-medium">保存</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* Scene Editing Modal */}
+      {editingScene && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+               <div className="bg-gray-900 w-full max-w-2xl rounded-xl border border-gray-800 shadow-2xl flex flex-col max-h-[90vh]">
+                   <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-950 rounded-t-xl">
+                      <h3 className="text-lg font-bold text-white">{isNew ? '新增场景' : '编辑场景'}</h3>
+                      <button onClick={() => setEditingScene(null)}><X className="w-5 h-5 text-gray-500"/></button>
+                  </div>
+                  <div className="p-6 overflow-y-auto space-y-4 custom-scrollbar">
+                      <div className="grid grid-cols-2 gap-4">
+                          <div>
+                              <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">场景名称</label>
+                              <input type="text" value={editingScene.name} onChange={e => setEditingScene({...editingScene, name: e.target.value})} className="w-full bg-gray-950 border border-gray-800 rounded p-2 text-white" placeholder="场景名" />
+                          </div>
+                          <div>
+                              <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">类型 (Type)</label>
+                              <select value={editingScene.type || '剧情节点'} onChange={e => setEditingScene({...editingScene, type: e.target.value as any})} className="w-full bg-gray-950 border border-gray-800 rounded p-2 text-white">
+                                  <option value="核心据点">核心据点 (主要场景)</option>
+                                  <option value="剧情节点">剧情节点 (次要场景)</option>
+                                  <option value="过场">过场 (Transition)</option>
+                              </select>
+                          </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                          <div>
+                               <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">结构 (Structure)</label>
+                               <select value={editingScene.structure} onChange={e => setEditingScene({...editingScene, structure: e.target.value as any})} className="w-full bg-gray-950 border border-gray-800 rounded p-2 text-white">
+                                   <option value="内景">内景 (Interior)</option>
+                                   <option value="外景">外景 (Exterior)</option>
+                               </select>
+                          </div>
+                          <div>
+                               <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">美术风格 (Style)</label>
+                               <input type="text" value={editingScene.style} onChange={e => setEditingScene({...editingScene, style: e.target.value})} className="w-full bg-gray-950 border border-gray-800 rounded p-2 text-white" placeholder="如: 赛博朋克, 古风..." />
+                          </div>
+                      </div>
+
+                      <div>
+                          <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">别名 (Aliases)</label>
+                          <input 
+                            type="text" 
+                            value={(editingScene.aliases || []).join(', ')} 
+                            onChange={e => setEditingScene({...editingScene, aliases: e.target.value.split(/[,，]/).map(s=>s.trim()).filter(Boolean)})} 
+                            className="w-full bg-gray-950 border border-gray-800 rounded p-2 text-white text-sm" 
+                            placeholder="逗号分隔别名..." 
+                          />
+                      </div>
+
+                      <div>
+                          <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">光影与氛围 (Atmosphere)</label>
+                          <textarea value={editingScene.atmosphere} onChange={e => setEditingScene({...editingScene, atmosphere: e.target.value})} className="w-full h-20 bg-gray-950 border border-gray-800 rounded p-2 text-white text-sm" placeholder="阴森, 阳光明媚, 霓虹闪烁..." />
+                      </div>
+
+                      <div>
+                          <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">详细描述 (Description)</label>
+                          <textarea value={editingScene.description} onChange={e => setEditingScene({...editingScene, description: e.target.value})} className="w-full h-24 bg-gray-950 border border-gray-800 rounded p-2 text-white text-sm" placeholder="场景视觉细节..." />
+                      </div>
+                  </div>
+                  <div className="p-4 border-t border-gray-800 flex justify-end gap-3 bg-gray-950 rounded-b-xl">
+                      <button onClick={() => setEditingScene(null)} className="px-4 py-2 rounded text-gray-400 hover:bg-gray-800">取消</button>
+                      <button onClick={() => saveScene(editingScene)} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded text-white font-medium">保存</button>
+                  </div>
+               </div>
+          </div>
+      )}
+
     </div>
   );
 };
