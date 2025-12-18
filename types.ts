@@ -1,0 +1,193 @@
+export interface Project {
+  id: string;
+  title: string;
+  createdAt: number;
+  fullText: string;
+  characters: Character[];
+  scenes: Scene[];
+  chapters: Chapter[];
+  prompts?: PromptConfig; // User customizable prompts
+  debugLog?: AnalysisDebugLog[]; // New: Store analysis logs
+}
+
+export interface AnalysisDebugLog {
+  timestamp: string;
+  chunkIndex: number;
+  rawResponse: string;
+  parsedData: any;
+  error?: string;
+  usedPrompt?: string; // New: Verify which prompt was actually used
+}
+
+export interface PromptConfig {
+  modelName: string; // New: Selected model identifier
+  entityExtraction: string;
+  entityEnrichment: string; 
+  chapterSplit: string;
+  storyboard: string;
+  exportFormat?: string; 
+  sceneOptimization?: string; 
+  apiDelay?: number; 
+}
+
+export interface ModelMetadata {
+  id: string;
+  name: string;
+  description: string;
+  pros: string;
+  cons: string;
+  maxChunkChars: number;
+  rpmLimit: number; // Approximate RPM for guidance
+  tags: string[];
+}
+
+export const AVAILABLE_MODELS: ModelMetadata[] = [
+  {
+    id: 'gemini-3-flash-preview',
+    name: 'Gemini 3 Flash (全能推荐)',
+    description: '极速响应，平衡性能与长度，适合大批量角色与场景提取。',
+    pros: '高并发支持，上下文理解稳定。',
+    cons: '分镜提示词细节略逊于 Pro 版本。',
+    maxChunkChars: 60000,
+    rpmLimit: 15,
+    tags: ['平衡', '主流']
+  },
+  {
+    id: 'gemini-3-pro-preview',
+    name: 'Gemini 3 Pro (智力巅峰)',
+    description: '最强逻辑推理，能够捕捉微小细节，适合生成极高标准的电影感分镜。',
+    pros: '分镜设计极具创意，细节提取深厚。',
+    cons: '免费版限频严重 (仅 2 RPM)，生成速度较慢。',
+    maxChunkChars: 120000,
+    rpmLimit: 2,
+    tags: ['深度', '电影感']
+  },
+  {
+    id: 'gemini-flash-lite-latest',
+    name: 'Gemini Flash Lite (极速轻量)',
+    description: '最低延迟的模型，适合初次快速扫描或简单摘要。',
+    pros: '响应极快，处理超长文本吞吐量大。',
+    cons: '复杂关系理解较弱，可能遗漏服装细节。',
+    maxChunkChars: 30000,
+    rpmLimit: 30,
+    tags: ['轻量', '节能']
+  }
+];
+
+export interface ClothingStyle {
+  phase: string; 
+  description: string;
+}
+
+export interface Weapon {
+  name: string;
+  description: string;
+}
+
+export type CharacterRole = '主要角色' | '次要角色' | '配角' | '路人甲';
+
+export interface Character {
+  id: string; 
+  groupName: string; // 角色本体名称 (如：孙悟空)
+  name: string; // 具体形态名称 (如：孙悟空-行者形态)
+  aliases: string[]; // 别名 (归属于 groupName，但在形态里展示方便编辑)
+  role: CharacterRole; // 新增：角色重要性分级
+  
+  age: string; // 视觉年龄
+  
+  // General
+  description: string; // 性格、背景、身份、性别等文本描述 (长篇描述，跨越形态)
+  visualMemoryPoints: string; // 纯粹的生理外貌特征 (不含武器)
+  clothingStyles: ClothingStyle[];
+  weapons: Weapon[]; // 新增：武器列表
+}
+
+export interface Scene {
+  id: string; 
+  groupName: string; 
+  name: string; 
+  aliases: string[];
+  description: string; // 具体描述
+  structure: '内景' | '外景'; 
+  atmosphere: string; 
+  style: string; 
+  frequency?: number; // 新增：出现频次/重要性权重
+  type?: '核心据点' | '剧情节点' | '过场'; // New: Scene classification
+}
+
+export interface Chapter {
+  id: string;
+  title: string;
+  summary: string;
+  content: string; 
+  storyboard: Shot[];
+}
+
+export interface ChapterMetadata {
+  title: string;
+  summary: string;
+  startLine: string;
+  endLine?: string;
+}
+
+export interface Shot {
+  id: string; 
+  speaker: string; 
+  script: string; 
+  visualPrompt: string; 
+  videoPrompt: string; 
+  
+  // Camera specific
+  shotType: string; // 景别 (Shot Size) e.g. 大特写, 中景
+  angle: string;    // 视角 (Angle) e.g. 仰视, 俯视, 平视
+  
+  audio: string; 
+  sfx: string; 
+}
+
+export enum AppView {
+  PROJECT_SELECT = 'PROJECT_SELECT',
+  ANALYSIS = 'ANALYSIS',
+  CHAPTERS = 'CHAPTERS',
+  STORYBOARD = 'STORYBOARD',
+  SETTINGS = 'SETTINGS',
+  EXPORT = 'EXPORT'
+}
+
+export const VISUAL_AGE_OPTIONS = [
+  "幼年 (0-6岁)",
+  "少年 (7-14岁)",
+  "青年 (15-25岁)",
+  "壮年 (26-40岁)",
+  "中年 (41-60岁)",
+  "老年 (60岁以上)",
+  "古稀/耄耋 (80岁以上)",
+  "外表无法判断"
+];
+
+export const CHARACTER_ROLES: CharacterRole[] = [
+  '主要角色',
+  '次要角色',
+  '配角',
+  '路人甲'
+];
+
+export const SHOT_TYPE_OPTIONS = [
+  "大特写 (Extreme Close Up)",
+  "特写 (Close Up)",
+  "近景 (Medium Close Up)",
+  "中景 (Medium Shot)",
+  "全景 (Full Shot)",
+  "远景 (Long Shot)",
+  "大远景 (Extreme Long Shot)"
+];
+
+export const ANGLE_OPTIONS = [
+  "平视 (Eye Level)",
+  "仰视 (Low Angle)",
+  "俯视 (High Angle)",
+  "顶视 (Overhead)",
+  "荷兰角 (Dutch Angle)",
+  "过肩镜头 (Over the Shoulder)",
+  "主观视角 (POV)"
+];
